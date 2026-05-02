@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Customer QR Generator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0f;
+      --card: #13131a;
+      --border: #2a2a3a;
+      --accent1: #00e5ff;
+      --accent2: #ff3cac;
+      --text: #f0f0f5;
+      --muted: #6b6b80;
+      --success: #4ade80;
+      --font-head: 'Syne', sans-serif;
+      --font-mono: 'DM Mono', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-head);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem 4rem;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 960px;
+    }
+
+    /* NAV BACK */
+    .nav-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-decoration: none;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 2.5rem;
+      transition: color 0.2s;
+    }
+    .nav-back:hover { color: var(--accent1); }
+
+    /* HEADER */
+    header {
+      text-align: center;
+      margin-bottom: 3rem;
+      animation: fadeDown 0.7s ease both;
+    }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent1);
+      margin-bottom: 0.75rem;
+    }
+    h1 {
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--text) 40%, var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.75rem;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-family: var(--font-mono);
+    }
+
+    /* MAIN LAYOUT */
+    .workspace {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+    @media (max-width: 680px) {
+      .workspace { grid-template-columns: 1fr; }
+    }
+
+    /* PANEL */
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 2rem;
+      position: relative;
+      overflow: hidden;
+      animation: fadeUp 0.7s ease both;
+    }
+    .panel::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      border-radius: 24px 24px 0 0;
+      background: linear-gradient(90deg, var(--accent2), #ff6b35);
+    }
+    .panel:nth-child(2)::before {
+      background: linear-gradient(90deg, var(--accent1), #00b4d8);
+    }
+    .panel:nth-child(2) { animation-delay: 0.15s; }
+
+    .panel-title {
+      font-size: 1rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      margin-bottom: 1.5rem;
+      color: var(--accent2);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .panel:nth-child(2) .panel-title { color: var(--accent1); }
+
+    /* FORM */
+    .form-group { margin-bottom: 1.25rem; }
+    label {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+    input[type="text"], input[type="url"] {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.75rem 1rem;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input:focus {
+      border-color: var(--accent2);
+      box-shadow: 0 0 0 3px rgba(255,60,172,0.08);
+    }
+
+    /* LOGO UPLOAD */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--accent2);
+      background: rgba(255,60,172,0.04);
+    }
+    .upload-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .upload-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+    .upload-text {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .upload-text strong { color: var(--accent2); }
+
+    .logo-preview-wrap {
+      display: none;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 0.75rem;
+    }
+    .logo-preview-wrap.visible { display: flex; }
+    .logo-preview-wrap img {
+      width: 52px;
+      height: 52px;
+      object-fit: contain;
+      border-radius: 8px;
+      background: #fff;
+      padding: 4px;
+    }
+    .logo-name {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--success);
+    }
+    .remove-logo {
+      margin-left: auto;
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1.1rem;
+      transition: color 0.2s;
+    }
+    .remove-logo:hover { color: var(--accent2); }
+
+    /* COLOR PICKERS */
+    .color-row {
+      display: flex;
+      gap: 1rem;
+    }
+    .color-row .form-group { flex: 1; }
+    .color-input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.5rem 0.75rem;
+    }
+    input[type="color"] {
+      -webkit-appearance: none;
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      padding: 0;
+      background: none;
+    }
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch { border: none; border-radius: 5px; }
+    .color-hex {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text);
+      flex: 1;
+    }
+
+    /* LOGO SIZE SLIDER */
+    .slider-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 4px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent2);
+      cursor: pointer;
+    }
+    .slider-val {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      min-width: 30px;
+      text-align: right;
+    }
+
+    /* GENERATE BTN */
+    .btn-generate {
+      width: 100%;
+      padding: 0.9rem;
+      background: linear-gradient(135deg, var(--accent2), #ff6b35);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-family: var(--font-head);
+      font-size: 0.95rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      margin-top: 0.5rem;
+      transition: opacity 0.2s, transform 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+    .btn-generate:hover { opacity: 0.9; transform: scale(0.99); }
+    .btn-generate:active { transform: scale(0.97); }
+
+    /* PREVIEW PANEL */
+    .preview-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 380px;
+      gap: 1rem;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      text-align: center;
+    }
+    .preview-empty .empty-icon { font-size: 3rem; opacity: 0.3; }
+
+    .preview-content { display: none; flex-direction: column; align-items: center; gap: 1.5rem; }
+    .preview-content.visible { display: flex; }
+
+    /* QR CARD PREVIEW */
+    .qr-card-preview {
+      background: #000;
+      border-radius: 20px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+    .qr-white-box {
+      background: #fff;
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    #qr-canvas-wrap { display: flex; }
+    #qr-canvas-wrap canvas, #qr-canvas-wrap img { display: block; }
+
+    .qr-scan-footer {
+      background: #000;
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      width: 100%;
+      border-radius: 0 0 14px 14px;
+    }
+    .scan-icon-circle {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+    }
+    .scan-me-text {
+      color: #fff;
+      font-weight: 800;
+      font-size: 1.4rem;
+      letter-spacing: 0.08em;
+    }
+
+    .company-name-display {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    /* DOWNLOAD BTN */
+    .btn-download-hd {
+      width: 100%;
+      padding: 0.85rem;
+      background: linear-gradient(135deg, var(--accent1), #00b4d8);
+      color: #0a0a0f;
+      border: none;
+      border-radius: 12px;
+      font-family: var(--font-head);
+      font-size: 0.9rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+    .btn-download-hd:hover { opacity: 0.9; transform: scale(0.99); }
+    .btn-download-hd:active { transform: scale(0.97); }
+
+    .download-meta {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    /* SUCCESS FLASH */
+    .success-flash {
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--success);
+      padding: 0.5rem 1rem;
+      background: rgba(74,222,128,0.08);
+      border: 1px solid rgba(74,222,128,0.2);
+      border-radius: 8px;
+    }
+    .success-flash.show { display: flex; }
+
+    @keyframes fadeDown { from { opacity:0; transform:translateY(-18px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes fadeUp   { from { opacity:0; transform:translateY(22px);  } to { opacity:1; transform:translateY(0); } }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <a class="nav-back" href="qr-display.html">← Back to QR Dashboard</a>
+
+  <header>
+    <p class="eyebrow">Custom QR &mdash; Branded Experience</p>
+    <h1>Customer QR Generator</h1>
+    <p class="subtitle">Add your URL + company logo &rarr; generate a branded HD QR code in seconds</p>
+  </header>
+
+  <div class="workspace">
+
+    <!-- LEFT: FORM -->
+    <div class="panel">
+      <div class="panel-title">⚙ Configure QR Code</div>
+
+      <div class="form-group">
+        <label>Destination URL *</label>
+        <input type="url" id="qr-url" placeholder="https://yourwebsite.com" autocomplete="off"/>
+      </div>
+
+      <div class="form-group">
+        <label>Company / Customer Name</label>
+        <input type="text" id="company-name" placeholder="Landscape Leadership" autocomplete="off"/>
+      </div>
+
+      <div class="form-group">
+        <label>Company Logo (optional)</label>
+        <div class="upload-zone" id="upload-zone">
+          <input type="file" id="logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp"/>
+          <div class="upload-icon">🖼</div>
+          <div class="upload-text">
+            <strong>Click to upload</strong> or drag &amp; drop<br>
+            PNG, JPG, SVG, WEBP · Recommended: square transparent PNG
+          </div>
+        </div>
+        <div class="logo-preview-wrap" id="logo-preview-wrap">
+          <img id="logo-preview-img" src="" alt="Logo preview"/>
+          <span class="logo-name" id="logo-preview-name"></span>
+          <button class="remove-logo" id="remove-logo" title="Remove logo">✕</button>
+        </div>
+      </div>
+
+      <div class="color-row">
+        <div class="form-group">
+          <label>QR Color</label>
+          <div class="color-input-wrap">
+            <input type="color" id="color-dark" value="#000000"/>
+            <span class="color-hex" id="hex-dark">#000000</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Background</label>
+          <div class="color-input-wrap">
+            <input type="color" id="color-light" value="#ffffff"/>
+            <span class="color-hex" id="hex-light">#ffffff</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group" id="logo-size-group" style="display:none;">
+        <label>Logo Size</label>
+        <div class="slider-wrap">
+          <input type="range" id="logo-size" min="10" max="35" value="22"/>
+          <span class="slider-val" id="logo-size-val">22%</span>
+        </div>
+      </div>
+
+      <button class="btn-generate" onclick="generateQR()">
+        ✦ Generate QR Code
+      </button>
+    </div>
+
+    <!-- RIGHT: PREVIEW -->
+    <div class="panel" id="preview-panel">
+      <div class="panel-title">👁 Live Preview</div>
+
+      <div class="preview-empty" id="preview-empty">
+        <div class="empty-icon">⬛</div>
+        <div>Fill in the URL and hit<br><strong style="color:var(--accent2)">Generate QR Code</strong></div>
+      </div>
+
+      <div class="preview-content" id="preview-content">
+
+        <div class="qr-card-preview" id="full-qr-card">
+          <div class="qr-white-box">
+            <div id="qr-canvas-wrap"></div>
+          </div>
+          <div class="qr-scan-footer">
+            <div class="scan-icon-circle">📱</div>
+            <span class="scan-me-text">SCAN ME</span>
+          </div>
+        </div>
+
+        <span class="company-name-display" id="company-display"></span>
+
+        <button class="btn-download-hd" onclick="downloadHD()">
+          ⬇ Download HD JPEG
+        </button>
+
+        <div class="download-meta">2400 × 2400 px · 300 DPI quality · print-ready</div>
+
+        <div class="success-flash" id="success-flash">
+          ✓ &nbsp; Downloaded successfully!
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /workspace -->
+
+</div>
+
+<!-- Hidden temp QR container (off-screen) for generation -->
+<div id="qr-temp-hidden" style="position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none;"></div>
+
+<script>
+  var logoDataURL = null;
+  var lastQRCanvas = null;
+
+  /* ── Color pickers ── */
+  document.getElementById('color-dark').addEventListener('input', function() {
+    document.getElementById('hex-dark').textContent = this.value;
+  });
+  document.getElementById('color-light').addEventListener('input', function() {
+    document.getElementById('hex-light').textContent = this.value;
+  });
+
+  /* ── Logo slider ── */
+  document.getElementById('logo-size').addEventListener('input', function() {
+    document.getElementById('logo-size-val').textContent = this.value + '%';
+  });
+
+  /* ── Logo upload ── */
+  document.getElementById('logo-file').addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    readLogo(file);
+  });
+
+  /* ── Drag & drop ── */
+  var zone = document.getElementById('upload-zone');
+  zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', function() { zone.classList.remove('drag-over'); });
+  zone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    var file = e.dataTransfer.files[0];
+    if (file && file.type.match('image.*')) readLogo(file);
+  });
+
+  function readLogo(file) {
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      logoDataURL = ev.target.result;
+      document.getElementById('logo-preview-img').src = logoDataURL;
+      document.getElementById('logo-preview-name').textContent = file.name;
+      document.getElementById('logo-preview-wrap').classList.add('visible');
+      document.getElementById('logo-size-group').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  document.getElementById('remove-logo').addEventListener('click', function() {
+    logoDataURL = null;
+    document.getElementById('logo-file').value = '';
+    document.getElementById('logo-preview-wrap').classList.remove('visible');
+    document.getElementById('logo-size-group').style.display = 'none';
+  });
+
+  /* ── MAIN GENERATE ── */
+  function generateQR() {
+    var url = document.getElementById('qr-url').value.trim();
+    if (!url) {
+      alert('Please enter a destination URL.');
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+
+    var colorDark  = document.getElementById('color-dark').value;
+    var colorLight = document.getElementById('color-light').value;
+    var company    = document.getElementById('company-name').value.trim();
+    var qrSize = 600;
+
+    /* Generate QR into hidden div first */
+    var hidden = document.getElementById('qr-temp-hidden');
+    hidden.innerHTML = '';
+    var tempDiv = document.createElement('div');
+    hidden.appendChild(tempDiv);
+
+    new QRCode(tempDiv, {
+      text: url,
+      width: qrSize,
+      height: qrSize,
+      colorDark: colorDark,
+      colorLight: colorLight,
+      correctLevel: QRCode.CorrectLevel.H  // High error correction for logo overlay
+    });
+
+    /* Wait for QR canvas to render */
+    setTimeout(function() {
+      var sourceCanvas = tempDiv.querySelector('canvas');
+      if (!sourceCanvas) {
+        alert('QR generation failed. Please try again.');
+        return;
+      }
+
+      /* Compose final canvas with optional logo */
+      composeFinal(sourceCanvas, qrSize, function(finalCanvas) {
+        lastQRCanvas = finalCanvas;
+
+        /* Update preview wrap */
+        var wrap = document.getElementById('qr-canvas-wrap');
+        wrap.innerHTML = '';
+        /* Scale down for preview */
+        var previewSize = 220;
+        var previewCanvas = document.createElement('canvas');
+        previewCanvas.width = previewSize;
+        previewCanvas.height = previewSize;
+        var ctx = previewCanvas.getContext('2d');
+        ctx.drawImage(finalCanvas, 0, 0, previewSize, previewSize);
+        wrap.appendChild(previewCanvas);
+
+        /* Company name */
+        var disp = document.getElementById('company-display');
+        disp.textContent = company ? company : '';
+
+        /* Show preview */
+        document.getElementById('preview-empty').style.display = 'none';
+        var content = document.getElementById('preview-content');
+        content.classList.add('visible');
+        document.getElementById('success-flash').classList.remove('show');
+      });
+    }, 120);
+  }
+
+  function composeFinal(qrCanvas, size, cb) {
+    var canvas = document.createElement('canvas');
+    canvas.width  = size;
+    canvas.height = size;
+    var ctx = canvas.getContext('2d');
+
+    /* Draw QR */
+    ctx.drawImage(qrCanvas, 0, 0, size, size);
+
+    if (!logoDataURL) {
+      cb(canvas);
+      return;
+    }
+
+    /* Overlay logo in center */
+    var logoSizePct = parseInt(document.getElementById('logo-size').value, 10) / 100;
+    var logoW = size * logoSizePct;
+    var logoH = logoW;
+    var lx = (size - logoW) / 2;
+    var ly = (size - logoH) / 2;
+
+    /* White circle background behind logo */
+    var radius = logoW * 0.58;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.restore();
+
+    var img = new Image();
+    img.onload = function() {
+      /* Clip logo to circle */
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, radius - 4, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(img, lx, ly, logoW, logoH);
+      ctx.restore();
+      cb(canvas);
+    };
+    img.onerror = function() {
+      cb(canvas);
+    };
+    img.src = logoDataURL;
+  }
+
+  /* ── DOWNLOAD HD ── */
+  function downloadHD() {
+    if (!lastQRCanvas) return;
+
+    var url = document.getElementById('qr-url').value.trim();
+    var company = document.getElementById('company-name').value.trim() || 'QR-Code';
+    var colorDark  = document.getElementById('color-dark').value;
+    var colorLight = document.getElementById('color-light').value;
+
+    /* Build HD canvas at 2400px */
+    var HD = 2400;
+    var qrArea = 1700;
+    var padding = (HD - qrArea) / 2;
+    var footerH = 460;
+    var totalH = HD + footerH;
+
+    var hdCanvas = document.createElement('canvas');
+    hdCanvas.width  = HD;
+    hdCanvas.height = totalH;
+    var ctx = hdCanvas.getContext('2d');
+
+    /* Background */
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, HD, totalH);
+
+    /* White rounded rect for QR area */
+    var boxPad = 80;
+    var boxX = padding - boxPad;
+    var boxY = padding - boxPad;
+    var boxW = qrArea + boxPad * 2;
+    var boxH = qrArea + boxPad * 2;
+    var r = 80;
+    ctx.beginPath();
+    ctx.moveTo(boxX + r, boxY);
+    ctx.lineTo(boxX + boxW - r, boxY);
+    ctx.arcTo(boxX + boxW, boxY, boxX + boxW, boxY + r, r);
+    ctx.lineTo(boxX + boxW, boxY + boxH - r);
+    ctx.arcTo(boxX + boxW, boxY + boxH, boxX + boxW - r, boxY + boxH, r);
+    ctx.lineTo(boxX + r, boxY + boxH);
+    ctx.arcTo(boxX, boxY + boxH, boxX, boxY + boxH - r, r);
+    ctx.lineTo(boxX, boxY + r);
+    ctx.arcTo(boxX, boxY, boxX + r, boxY, r);
+    ctx.closePath();
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+
+    /* Draw the QR at HD resolution — re-generate at 1700px */
+    var hdQrUrl = url;
+    if (!/^https?:\/\//i.test(hdQrUrl)) hdQrUrl = 'https://' + hdQrUrl;
+
+    var offscreen = document.createElement('div');
+    offscreen.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none;';
+    document.body.appendChild(offscreen);
+
+    new QRCode(offscreen, {
+      text: hdQrUrl,
+      width: qrArea,
+      height: qrArea,
+      colorDark: colorDark,
+      colorLight: colorLight,
+      correctLevel: QRCode.CorrectLevel.H
+    });
+
+    setTimeout(function() {
+      var qrC = offscreen.querySelector('canvas');
+      if (!qrC) { document.body.removeChild(offscreen); return; }
+
+      function drawHDQR(qrSource) {
+        /* Compose with logo */
+        var compCanvas = document.createElement('canvas');
+        compCanvas.width  = qrArea;
+        compCanvas.height = qrArea;
+        var cctx = compCanvas.getContext('2d');
+        cctx.drawImage(qrSource, 0, 0, qrArea, qrArea);
+
+        function finalize(composed) {
+          ctx.drawImage(composed, padding, padding, qrArea, qrArea);
+
+          /* Footer - "SCAN ME" section */
+          var fy = HD;
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(0, fy, HD, footerH);
+
+          /* Phone icon circle */
+          var cx = 220, cy = fy + footerH / 2;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 130, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+
+          /* Phone icon (text emoji fallback) */
+          ctx.fillStyle = '#000000';
+          ctx.font = '110px serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('📱', cx, cy + 5);
+
+          /* SCAN ME text */
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 200px Arial';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('SCAN ME', 400, fy + footerH / 2);
+
+          /* Trigger download */
+          document.body.removeChild(offscreen);
+          var filename = (company || 'QR') + '-HD.jpg';
+          var jpeg = hdCanvas.toDataURL('image/jpeg', 0.96);
+          var a = document.createElement('a');
+          a.href = jpeg;
+          a.download = filename;
+          a.click();
+
+          var flash = document.getElementById('success-flash');
+          flash.classList.add('show');
+          setTimeout(function() { flash.classList.remove('show'); }, 3000);
+        }
+
+        if (!logoDataURL) {
+          finalize(compCanvas);
+          return;
+        }
+
+        var logoSizePct = parseInt(document.getElementById('logo-size').value, 10) / 100;
+        var logoW = qrArea * logoSizePct;
+        var lx2 = (qrArea - logoW) / 2;
+        var ly2 = lx2;
+        var radius2 = logoW * 0.58;
+
+        cctx.save();
+        cctx.beginPath();
+        cctx.arc(qrArea / 2, qrArea / 2, radius2, 0, Math.PI * 2);
+        cctx.fillStyle = '#ffffff';
+        cctx.fill();
+        cctx.restore();
+
+        var hdImg = new Image();
+        hdImg.onload = function() {
+          cctx.save();
+          cctx.beginPath();
+          cctx.arc(qrArea / 2, qrArea / 2, radius2 - 8, 0, Math.PI * 2);
+          cctx.clip();
+          cctx.drawImage(hdImg, lx2, ly2, logoW, logoW);
+          cctx.restore();
+          finalize(compCanvas);
+        };
+        hdImg.onerror = function() { finalize(compCanvas); };
+        hdImg.src = logoDataURL;
+      }
+
+      drawHDQR(qrC);
+    }, 150);
+  }
+</script>
+</body>
+</html>
