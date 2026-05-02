@@ -559,6 +559,7 @@
 
 <script>
   var logoDataURL = null;
+  var logoImg = null; // pre-loaded Image object for crisp rendering
   var lastQRCanvas = null;
 
   /* ── Color pickers ── */
@@ -581,7 +582,6 @@
     readLogo(file);
   });
 
-  /* ── Drag & drop ── */
   var zone = document.getElementById('upload-zone');
   zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', function() { zone.classList.remove('drag-over'); });
@@ -596,6 +596,9 @@
     var reader = new FileReader();
     reader.onload = function(ev) {
       logoDataURL = ev.target.result;
+      /* Pre-load image for crisp rendering later */
+      logoImg = new Image();
+      logoImg.src = logoDataURL;
       document.getElementById('logo-preview-img').src = logoDataURL;
       document.getElementById('logo-preview-name').textContent = file.name;
       document.getElementById('logo-preview-wrap').classList.add('visible');
@@ -606,26 +609,213 @@
 
   document.getElementById('remove-logo').addEventListener('click', function() {
     logoDataURL = null;
+    logoImg = null;
     document.getElementById('logo-file').value = '';
     document.getElementById('logo-preview-wrap').classList.remove('visible');
     document.getElementById('logo-size-group').style.display = 'none';
   });
 
-  /* ── MAIN GENERATE ── */
-  function generateQR() {
-    var url = document.getElementById('qr-url').value.trim();
-    if (!url) {
-      alert('Please enter a destination URL.');
+  /* ─────────────────────────────────────────────────────
+     Overlay logo onto a QR canvas at given size.
+     Uses a large white circle + inner shadow ring for clarity.
+  ───────────────────────────────────────────────────── */
+  function overlayLogo(ctx, size, logoSizePct, img, cb) {
+    var logoW   = size * logoSizePct;           // logo bounding box
+    var circleR = logoW * 0.62;                 // white background circle radius
+    var cx = size / 2, cy = size / 2;
+
+    /* Outer white circle — generous padding so logo sits cleanly */
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, circleR, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(0,0,0,0.18)';
+    ctx.shadowBlur  = size * 0.012;
+    ctx.fill();
+    ctx.shadowBlur  = 0;
+    ctx.restore();
+
+    /* Clip-draw the logo inside (slightly smaller than circle) */
+    var clipR   = circleR - size * 0.012;       // small gap so white border shows
+    var drawW   = clipR * 1.55;                  // logo drawn at 77.5% of diameter
+    var drawX   = cx - drawW / 2;
+    var drawY   = cy - drawW / 2;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, clipR, 0, Math.PI * 2);
+    ctx.clip();
+    /* imageSmoothingQuality = high for best clarity */
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, drawX, drawY, drawW, drawW);
+    ctx.restore();
+
+    if (cb) cb();
+  }
+
+  /* ─────────────────────────────────────────────────────
+     Draw a canvas phone icon (no emoji, fully vector)
+  ───────────────────────────────────────────────────── */
+  function drawPhoneIcon(ctx, cx, cy, circleR) {
+    /* White circle */
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, circleR, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+
+    /* Phone body (rounded rect) */
+    var ph = circleR * 1.1, pw = circleR * 0.68;
+    var px = cx - pw/2, py = cy - ph/2;
+    var pr = pw * 0.18;
+    ctx.beginPath();
+    ctx.moveTo(px + pr, py);
+    ctx.lineTo(px + pw - pr, py);
+    ctx.arcTo(px + pw, py, px + pw, py + pr, pr);
+    ctx.lineTo(px + pw, py + ph - pr);
+    ctx.arcTo(px + pw, py + ph, px + pw - pr, py + ph, pr);
+    ctx.lineTo(px + pr, py + ph);
+    ctx.arcTo(px, py + ph, px, py + ph - pr, pr);
+    ctx.lineTo(px, py + pr);
+    ctx.arcTo(px, py, px + pr, py, pr);
+    ctx.closePath();
+    ctx.fillStyle = '#000000';
+    ctx.fill();
+
+    /* Screen (white rect inside) */
+    var sw = pw * 0.72, sh = ph * 0.56;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(cx - sw/2, cy - sh/2 - ph*0.04, sw, sh);
+
+    /* Home button dot */
+    ctx.beginPath();
+    ctx.arc(cx, py + ph - pw*0.22, pw*0.1, 0, Math.PI*2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  /* ─────────────────────────────────────────────────────
+     Compose QR + logo into a single canvas
+  ───────────────────────────────────────────────────── */
+  function composeQR(qrCanvas, size, logoSizePct, cb) {
+    var canvas = document.createElement('canvas');
+    canvas.width  = size;
+    canvas.height = size;
+    var ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    ctx.drawImage(qrCanvas, 0, 0, size, size);
+
+    if (!logoImg || !logoDataURL) {
+      cb(canvas);
       return;
     }
+
+    if (logoImg.complete && logoImg.naturalWidth > 0) {
+      overlayLogo(ctx, size, logoSizePct, logoImg, function() { cb(canvas); });
+    } else {
+      logoImg.onload = function() {
+        overlayLogo(ctx, size, logoSizePct, logoImg, function() { cb(canvas); });
+      };
+    }
+  }
+
+  /* ─────────────────────────────────────────────────────
+     Build the full output canvas:
+       [ black bg ]  [ white rounded QR box ]  [ SCAN ME bar ]
+     SCAN ME is centered in the footer strip.
+  ───────────────────────────────────────────────────── */
+  function buildFullCanvas(qrComposed, qrSize, outputW, cb) {
+    var margin   = Math.round(outputW * 0.055);  // black margin around white box
+    var boxPad   = Math.round(outputW * 0.038);  // white box inner padding
+    var footerH  = Math.round(outputW * 0.22);   // SCAN ME strip height
+    var totalH   = outputW + footerH;
+
+    var canvas = document.createElement('canvas');
+    canvas.width  = outputW;
+    canvas.height = totalH;
+    var ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    /* Full black background */
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, outputW, totalH);
+
+    /* White rounded box */
+    var boxX = margin, boxY = margin;
+    var boxW = outputW - margin * 2;
+    var boxH = boxW;
+    var r    = Math.round(outputW * 0.055);
+
+    ctx.beginPath();
+    ctx.moveTo(boxX + r, boxY);
+    ctx.lineTo(boxX + boxW - r, boxY);
+    ctx.arcTo(boxX + boxW, boxY,          boxX + boxW, boxY + r,          r);
+    ctx.lineTo(boxX + boxW, boxY + boxH - r);
+    ctx.arcTo(boxX + boxW, boxY + boxH,   boxX + boxW - r, boxY + boxH,   r);
+    ctx.lineTo(boxX + r,   boxY + boxH);
+    ctx.arcTo(boxX,        boxY + boxH,   boxX, boxY + boxH - r,          r);
+    ctx.lineTo(boxX,       boxY + r);
+    ctx.arcTo(boxX,        boxY,          boxX + r, boxY,                  r);
+    ctx.closePath();
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+
+    /* Draw QR inside white box with padding */
+    var qrDrawX = boxX + boxPad;
+    var qrDrawY = boxY + boxPad;
+    var qrDrawW = boxW - boxPad * 2;
+    ctx.drawImage(qrComposed, qrDrawX, qrDrawY, qrDrawW, qrDrawW);
+
+    /* ── SCAN ME footer — fully centered ── */
+    var footerY   = outputW;                       // starts right after QR area
+    var footerMid = footerY + footerH / 2;
+
+    /* Phone icon circle */
+    var iconR   = footerH * 0.38;
+    var scanText = 'SCAN ME';
+    var fontSize = Math.round(footerH * 0.50);
+
+    /* Measure text to compute total block width for centering */
+    ctx.font = 'bold ' + fontSize + 'px Arial Black, Arial, sans-serif';
+    var textW   = ctx.measureText(scanText).width;
+    var iconGap = footerH * 0.12;
+    var blockW  = iconR * 2 + iconGap + textW;
+    var blockX  = (outputW - blockW) / 2;
+
+    /* Draw icon */
+    var iconCX = blockX + iconR;
+    drawPhoneIcon(ctx, iconCX, footerMid, iconR);
+
+    /* SCAN ME text */
+    ctx.fillStyle    = '#ffffff';
+    ctx.font         = 'bold ' + fontSize + 'px Arial Black, Arial, sans-serif';
+    ctx.textAlign    = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(scanText, iconCX + iconR + iconGap, footerMid);
+
+    cb(canvas);
+  }
+
+  /* ─────────────────────────────────────────────────────
+     GENERATE — preview
+  ───────────────────────────────────────────────────── */
+  function generateQR() {
+    var url = document.getElementById('qr-url').value.trim();
+    if (!url) { alert('Please enter a destination URL.'); return; }
     if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
 
     var colorDark  = document.getElementById('color-dark').value;
     var colorLight = document.getElementById('color-light').value;
     var company    = document.getElementById('company-name').value.trim();
-    var qrSize = 600;
+    var logoSizePct = parseInt(document.getElementById('logo-size').value, 10) / 100;
+    var qrRaw = 900; // raw QR gen size
 
-    /* Generate QR into hidden div first */
     var hidden = document.getElementById('qr-temp-hidden');
     hidden.innerHTML = '';
     var tempDiv = document.createElement('div');
@@ -633,157 +823,65 @@
 
     new QRCode(tempDiv, {
       text: url,
-      width: qrSize,
-      height: qrSize,
-      colorDark: colorDark,
-      colorLight: colorLight,
-      correctLevel: QRCode.CorrectLevel.H  // High error correction for logo overlay
+      width: qrRaw, height: qrRaw,
+      colorDark: colorDark, colorLight: colorLight,
+      correctLevel: QRCode.CorrectLevel.H
     });
 
-    /* Wait for QR canvas to render */
     setTimeout(function() {
-      var sourceCanvas = tempDiv.querySelector('canvas');
-      if (!sourceCanvas) {
-        alert('QR generation failed. Please try again.');
-        return;
-      }
+      var srcCanvas = tempDiv.querySelector('canvas');
+      if (!srcCanvas) { alert('QR generation failed.'); return; }
 
-      /* Compose final canvas with optional logo */
-      composeFinal(sourceCanvas, qrSize, function(finalCanvas) {
-        lastQRCanvas = finalCanvas;
+      composeQR(srcCanvas, qrRaw, logoSizePct, function(composed) {
+        /* Build preview full card at small size */
+        var previewW = 260;
+        buildFullCanvas(composed, qrRaw, previewW, function(fullCard) {
+          lastQRCanvas = composed; // save for HD download
 
-        /* Update preview wrap */
-        var wrap = document.getElementById('qr-canvas-wrap');
-        wrap.innerHTML = '';
-        /* Scale down for preview */
-        var previewSize = 220;
-        var previewCanvas = document.createElement('canvas');
-        previewCanvas.width = previewSize;
-        previewCanvas.height = previewSize;
-        var ctx = previewCanvas.getContext('2d');
-        ctx.drawImage(finalCanvas, 0, 0, previewSize, previewSize);
-        wrap.appendChild(previewCanvas);
+          var wrap = document.getElementById('qr-canvas-wrap');
+          wrap.innerHTML = '';
+          /* Show only the QR box portion scaled to 220px */
+          var prev = document.createElement('canvas');
+          prev.width = 220; prev.height = 220;
+          var pctx = prev.getContext('2d');
+          pctx.imageSmoothingEnabled = true;
+          pctx.imageSmoothingQuality = 'high';
+          pctx.drawImage(composed, 0, 0, 220, 220);
+          wrap.appendChild(prev);
 
-        /* Company name */
-        var disp = document.getElementById('company-display');
-        disp.textContent = company ? company : '';
-
-        /* Show preview */
-        document.getElementById('preview-empty').style.display = 'none';
-        var content = document.getElementById('preview-content');
-        content.classList.add('visible');
-        document.getElementById('success-flash').classList.remove('show');
+          /* Update the HTML preview card footer too */
+          document.getElementById('company-display').textContent = company || '';
+          document.getElementById('preview-empty').style.display = 'none';
+          document.getElementById('preview-content').classList.add('visible');
+          document.getElementById('success-flash').classList.remove('show');
+        });
       });
-    }, 120);
+    }, 150);
   }
 
-  function composeFinal(qrCanvas, size, cb) {
-    var canvas = document.createElement('canvas');
-    canvas.width  = size;
-    canvas.height = size;
-    var ctx = canvas.getContext('2d');
-
-    /* Draw QR */
-    ctx.drawImage(qrCanvas, 0, 0, size, size);
-
-    if (!logoDataURL) {
-      cb(canvas);
-      return;
-    }
-
-    /* Overlay logo in center */
-    var logoSizePct = parseInt(document.getElementById('logo-size').value, 10) / 100;
-    var logoW = size * logoSizePct;
-    var logoH = logoW;
-    var lx = (size - logoW) / 2;
-    var ly = (size - logoH) / 2;
-
-    /* White circle background behind logo */
-    var radius = logoW * 0.58;
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(size / 2, size / 2, radius, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    ctx.restore();
-
-    var img = new Image();
-    img.onload = function() {
-      /* Clip logo to circle */
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(size / 2, size / 2, radius - 4, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.drawImage(img, lx, ly, logoW, logoH);
-      ctx.restore();
-      cb(canvas);
-    };
-    img.onerror = function() {
-      cb(canvas);
-    };
-    img.src = logoDataURL;
-  }
-
-  /* ── DOWNLOAD HD ── */
+  /* ─────────────────────────────────────────────────────
+     DOWNLOAD HD — regenerates at 2400px
+  ───────────────────────────────────────────────────── */
   function downloadHD() {
     if (!lastQRCanvas) return;
 
     var url = document.getElementById('qr-url').value.trim();
-    var company = document.getElementById('company-name').value.trim() || 'QR-Code';
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    var company    = document.getElementById('company-name').value.trim() || 'QR-Code';
     var colorDark  = document.getElementById('color-dark').value;
     var colorLight = document.getElementById('color-light').value;
+    var logoSizePct = parseInt(document.getElementById('logo-size').value, 10) / 100;
 
-    /* Build HD canvas at 2400px */
-    var HD = 2400;
-    var qrArea = 1700;
-    var padding = (HD - qrArea) / 2;
-    var footerH = 460;
-    var totalH = HD + footerH;
-
-    var hdCanvas = document.createElement('canvas');
-    hdCanvas.width  = HD;
-    hdCanvas.height = totalH;
-    var ctx = hdCanvas.getContext('2d');
-
-    /* Background */
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, HD, totalH);
-
-    /* White rounded rect for QR area */
-    var boxPad = 80;
-    var boxX = padding - boxPad;
-    var boxY = padding - boxPad;
-    var boxW = qrArea + boxPad * 2;
-    var boxH = qrArea + boxPad * 2;
-    var r = 80;
-    ctx.beginPath();
-    ctx.moveTo(boxX + r, boxY);
-    ctx.lineTo(boxX + boxW - r, boxY);
-    ctx.arcTo(boxX + boxW, boxY, boxX + boxW, boxY + r, r);
-    ctx.lineTo(boxX + boxW, boxY + boxH - r);
-    ctx.arcTo(boxX + boxW, boxY + boxH, boxX + boxW - r, boxY + boxH, r);
-    ctx.lineTo(boxX + r, boxY + boxH);
-    ctx.arcTo(boxX, boxY + boxH, boxX, boxY + boxH - r, r);
-    ctx.lineTo(boxX, boxY + r);
-    ctx.arcTo(boxX, boxY, boxX + r, boxY, r);
-    ctx.closePath();
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-
-    /* Draw the QR at HD resolution — re-generate at 1700px */
-    var hdQrUrl = url;
-    if (!/^https?:\/\//i.test(hdQrUrl)) hdQrUrl = 'https://' + hdQrUrl;
+    var HD = 2200; // QR generation size
 
     var offscreen = document.createElement('div');
     offscreen.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none;';
     document.body.appendChild(offscreen);
 
     new QRCode(offscreen, {
-      text: hdQrUrl,
-      width: qrArea,
-      height: qrArea,
-      colorDark: colorDark,
-      colorLight: colorLight,
+      text: url,
+      width: HD, height: HD,
+      colorDark: colorDark, colorLight: colorLight,
       correctLevel: QRCode.CorrectLevel.H
     });
 
@@ -791,91 +889,22 @@
       var qrC = offscreen.querySelector('canvas');
       if (!qrC) { document.body.removeChild(offscreen); return; }
 
-      function drawHDQR(qrSource) {
-        /* Compose with logo */
-        var compCanvas = document.createElement('canvas');
-        compCanvas.width  = qrArea;
-        compCanvas.height = qrArea;
-        var cctx = compCanvas.getContext('2d');
-        cctx.drawImage(qrSource, 0, 0, qrArea, qrArea);
-
-        function finalize(composed) {
-          ctx.drawImage(composed, padding, padding, qrArea, qrArea);
-
-          /* Footer - "SCAN ME" section */
-          var fy = HD;
-          ctx.fillStyle = '#000000';
-          ctx.fillRect(0, fy, HD, footerH);
-
-          /* Phone icon circle */
-          var cx = 220, cy = fy + footerH / 2;
-          ctx.beginPath();
-          ctx.arc(cx, cy, 130, 0, Math.PI * 2);
-          ctx.fillStyle = '#ffffff';
-          ctx.fill();
-
-          /* Phone icon (text emoji fallback) */
-          ctx.fillStyle = '#000000';
-          ctx.font = '110px serif';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText('📱', cx, cy + 5);
-
-          /* SCAN ME text */
-          ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 200px Arial';
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'middle';
-          ctx.fillText('SCAN ME', 400, fy + footerH / 2);
-
-          /* Trigger download */
+      composeQR(qrC, HD, logoSizePct, function(composed) {
+        var outputW = 2400;
+        buildFullCanvas(composed, HD, outputW, function(finalCanvas) {
           document.body.removeChild(offscreen);
-          var filename = (company || 'QR') + '-HD.jpg';
-          var jpeg = hdCanvas.toDataURL('image/jpeg', 0.96);
+          var jpeg = finalCanvas.toDataURL('image/jpeg', 0.97);
           var a = document.createElement('a');
-          a.href = jpeg;
-          a.download = filename;
+          a.href     = jpeg;
+          a.download = company.replace(/\s+/g, '_') + '-HD.jpg';
           a.click();
 
           var flash = document.getElementById('success-flash');
           flash.classList.add('show');
           setTimeout(function() { flash.classList.remove('show'); }, 3000);
-        }
-
-        if (!logoDataURL) {
-          finalize(compCanvas);
-          return;
-        }
-
-        var logoSizePct = parseInt(document.getElementById('logo-size').value, 10) / 100;
-        var logoW = qrArea * logoSizePct;
-        var lx2 = (qrArea - logoW) / 2;
-        var ly2 = lx2;
-        var radius2 = logoW * 0.58;
-
-        cctx.save();
-        cctx.beginPath();
-        cctx.arc(qrArea / 2, qrArea / 2, radius2, 0, Math.PI * 2);
-        cctx.fillStyle = '#ffffff';
-        cctx.fill();
-        cctx.restore();
-
-        var hdImg = new Image();
-        hdImg.onload = function() {
-          cctx.save();
-          cctx.beginPath();
-          cctx.arc(qrArea / 2, qrArea / 2, radius2 - 8, 0, Math.PI * 2);
-          cctx.clip();
-          cctx.drawImage(hdImg, lx2, ly2, logoW, logoW);
-          cctx.restore();
-          finalize(compCanvas);
-        };
-        hdImg.onerror = function() { finalize(compCanvas); };
-        hdImg.src = logoDataURL;
-      }
-
-      drawHDQR(qrC);
-    }, 150);
+        });
+      });
+    }, 200);
   }
 </script>
 </body>
