@@ -265,11 +265,6 @@
     }
 
     /* LOGO SIZE SLIDER */
-    .slider-wrap {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
     input[type="range"] {
       -webkit-appearance: none;
       flex: 1;
@@ -439,7 +434,45 @@
     @keyframes fadeDown { from { opacity:0; transform:translateY(-18px); } to { opacity:1; transform:translateY(0); } }
     @keyframes fadeUp   { from { opacity:0; transform:translateY(22px);  } to { opacity:1; transform:translateY(0); } }
 
-    /* Logo background swatches */
+    /* Logo scale control */
+    .scale-control {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.5rem 0.75rem;
+    }
+    .scale-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.07);
+      color: var(--text);
+      font-size: 1.2rem;
+      font-weight: 700;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+      user-select: none;
+    }
+    .scale-btn:hover  { background: rgba(255,60,172,0.18); border-color: var(--accent2); }
+    .scale-btn:active { transform: scale(0.9); }
+    .scale-track { flex: 1; }
+    .slider-val {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--accent2);
+      min-width: 36px;
+      text-align: right;
+      font-weight: 500;
+    }
     .swatch-row {
       display: flex;
       flex-wrap: wrap;
@@ -531,8 +564,12 @@
 
       <div class="form-group" id="logo-size-group" style="display:none;">
         <label>Logo Size</label>
-        <div class="slider-wrap">
-          <input type="range" id="logo-size" min="10" max="35" value="22"/>
+        <div class="scale-control">
+          <button class="scale-btn" id="scale-down" onclick="adjustLogoSize(-2)">−</button>
+          <div class="scale-track">
+            <input type="range" id="logo-size" min="8" max="42" value="22"/>
+          </div>
+          <button class="scale-btn" id="scale-up" onclick="adjustLogoSize(2)">+</button>
           <span class="slider-val" id="logo-size-val">22%</span>
         </div>
       </div>
@@ -638,10 +675,17 @@
     document.getElementById('hex-light').textContent = this.value;
   });
 
-  /* ── Logo slider ── */
+  /* ── Logo slider + +/- buttons ── */
   document.getElementById('logo-size').addEventListener('input', function() {
     document.getElementById('logo-size-val').textContent = this.value + '%';
   });
+
+  function adjustLogoSize(delta) {
+    var slider = document.getElementById('logo-size');
+    var newVal = Math.min(42, Math.max(8, parseInt(slider.value, 10) + delta));
+    slider.value = newVal;
+    document.getElementById('logo-size-val').textContent = newVal + '%';
+  }
 
   /* ── Logo upload ── */
   document.getElementById('logo-file').addEventListener('change', function(e) {
