@@ -438,6 +438,34 @@
 
     @keyframes fadeDown { from { opacity:0; transform:translateY(-18px); } to { opacity:1; transform:translateY(0); } }
     @keyframes fadeUp   { from { opacity:0; transform:translateY(22px);  } to { opacity:1; transform:translateY(0); } }
+
+    /* Logo background swatches */
+    .swatch-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .logo-bg-swatch {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+      flex-shrink: 0;
+    }
+    .logo-bg-swatch:hover {
+      transform: scale(1.15);
+    }
+    .logo-bg-swatch.active {
+      border-color: var(--accent2);
+      box-shadow: 0 0 0 3px rgba(255,60,172,0.25);
+    }
+    .logo-bg-swatch[data-color="#ffffff"] { border-color: #444; }
+    .logo-bg-swatch[data-color="#ffffff"].active { border-color: var(--accent2); }
   </style>
 </head>
 <body>
@@ -509,6 +537,25 @@
         </div>
       </div>
 
+      <div class="form-group" id="logo-bg-group" style="display:none;">
+        <label>Logo Circle Background</label>
+        <div class="swatch-row">
+          <div class="logo-bg-swatch active" data-color="#ffffff" style="background:#ffffff;" title="White"></div>
+          <div class="logo-bg-swatch" data-color="#000000" style="background:#000000;" title="Black"></div>
+          <div class="logo-bg-swatch" data-color="#1a1a2e" style="background:#1a1a2e;" title="Dark Navy"></div>
+          <div class="logo-bg-swatch" data-color="#22c55e" style="background:#22c55e;" title="Green"></div>
+          <div class="logo-bg-swatch" data-color="#3b82f6" style="background:#3b82f6;" title="Blue"></div>
+          <div class="logo-bg-swatch" data-color="#ef4444" style="background:#ef4444;" title="Red"></div>
+          <div class="logo-bg-swatch" data-color="#f59e0b" style="background:#f59e0b;" title="Amber"></div>
+          <div class="logo-bg-swatch" data-color="#8b5cf6" style="background:#8b5cf6;" title="Purple"></div>
+          <div class="logo-bg-swatch" data-color="#f97316" style="background:#f97316;" title="Orange"></div>
+          <div class="logo-bg-swatch logo-bg-custom" data-color="custom" title="Pick any color" style="position:relative;overflow:hidden;">
+            <input type="color" id="logo-bg-custom-color" value="#ffffff" style="opacity:0;position:absolute;inset:0;width:100%;height:100%;cursor:pointer;border:none;padding:0;"/>
+            <span style="font-size:1rem;line-height:1;pointer-events:none;">🎨</span>
+          </div>
+        </div>
+      </div>
+
       <button class="btn-generate" onclick="generateQR()">
         ✦ Generate QR Code
       </button>
@@ -561,6 +608,27 @@
   var logoDataURL = null;
   var logoImg = null; // pre-loaded Image object for crisp rendering
   var lastQRCanvas = null;
+  var logoBgColor = '#ffffff'; // default white circle background
+
+  /* ── Logo background swatch picker ── */
+  document.querySelectorAll('.logo-bg-swatch').forEach(function(swatch) {
+    swatch.addEventListener('click', function() {
+      if (this.dataset.color === 'custom') return; // handled by color input
+      document.querySelectorAll('.logo-bg-swatch').forEach(function(s) { s.classList.remove('active'); });
+      this.classList.add('active');
+      logoBgColor = this.dataset.color;
+    });
+  });
+
+  /* Custom color input */
+  var customColorInput = document.getElementById('logo-bg-custom-color');
+  customColorInput.addEventListener('input', function() {
+    logoBgColor = this.value;
+    /* Update the custom swatch background to show selected color */
+    document.querySelector('.logo-bg-custom').style.background = this.value;
+    document.querySelectorAll('.logo-bg-swatch').forEach(function(s) { s.classList.remove('active'); });
+    document.querySelector('.logo-bg-custom').classList.add('active');
+  });
 
   /* ── Color pickers ── */
   document.getElementById('color-dark').addEventListener('input', function() {
@@ -603,6 +671,7 @@
       document.getElementById('logo-preview-name').textContent = file.name;
       document.getElementById('logo-preview-wrap').classList.add('visible');
       document.getElementById('logo-size-group').style.display = 'block';
+      document.getElementById('logo-bg-group').style.display = 'block';
     };
     reader.readAsDataURL(file);
   }
@@ -613,6 +682,7 @@
     document.getElementById('logo-file').value = '';
     document.getElementById('logo-preview-wrap').classList.remove('visible');
     document.getElementById('logo-size-group').style.display = 'none';
+    document.getElementById('logo-bg-group').style.display = 'none';
   });
 
   /* ─────────────────────────────────────────────────────
@@ -624,11 +694,11 @@
     var circleR = logoW * 0.62;                 // white background circle radius
     var cx = size / 2, cy = size / 2;
 
-    /* Outer white circle — generous padding so logo sits cleanly */
+    /* Outer colored circle — generous padding so logo sits cleanly */
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, circleR, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = logoBgColor;
     ctx.shadowColor = 'rgba(0,0,0,0.18)';
     ctx.shadowBlur  = size * 0.012;
     ctx.fill();
