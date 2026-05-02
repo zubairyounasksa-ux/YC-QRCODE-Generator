@@ -563,14 +563,26 @@
       </div>
 
       <div class="form-group" id="logo-size-group" style="display:none;">
-        <label>Logo Size</label>
+        <label>Logo Image Size</label>
         <div class="scale-control">
-          <button class="scale-btn" id="scale-down" onclick="adjustLogoSize(-2)">−</button>
+          <button class="scale-btn" onclick="adjustLogoSize(-2)">−</button>
           <div class="scale-track">
             <input type="range" id="logo-size" min="8" max="42" value="22"/>
           </div>
-          <button class="scale-btn" id="scale-up" onclick="adjustLogoSize(2)">+</button>
+          <button class="scale-btn" onclick="adjustLogoSize(2)">+</button>
           <span class="slider-val" id="logo-size-val">22%</span>
+        </div>
+      </div>
+
+      <div class="form-group" id="circle-size-group" style="display:none;">
+        <label>Logo Circle Size</label>
+        <div class="scale-control">
+          <button class="scale-btn" onclick="adjustCircleSize(-2)">−</button>
+          <div class="scale-track">
+            <input type="range" id="circle-size" min="10" max="50" value="28"/>
+          </div>
+          <button class="scale-btn" onclick="adjustCircleSize(2)">+</button>
+          <span class="slider-val" id="circle-size-val">28%</span>
         </div>
       </div>
 
@@ -680,11 +692,22 @@
     document.getElementById('logo-size-val').textContent = this.value + '%';
   });
 
+  document.getElementById('circle-size').addEventListener('input', function() {
+    document.getElementById('circle-size-val').textContent = this.value + '%';
+  });
+
   function adjustLogoSize(delta) {
     var slider = document.getElementById('logo-size');
     var newVal = Math.min(42, Math.max(8, parseInt(slider.value, 10) + delta));
     slider.value = newVal;
     document.getElementById('logo-size-val').textContent = newVal + '%';
+  }
+
+  function adjustCircleSize(delta) {
+    var slider = document.getElementById('circle-size');
+    var newVal = Math.min(50, Math.max(10, parseInt(slider.value, 10) + delta));
+    slider.value = newVal;
+    document.getElementById('circle-size-val').textContent = newVal + '%';
   }
 
   /* ── Logo upload ── */
@@ -715,6 +738,7 @@
       document.getElementById('logo-preview-name').textContent = file.name;
       document.getElementById('logo-preview-wrap').classList.add('visible');
       document.getElementById('logo-size-group').style.display = 'block';
+      document.getElementById('circle-size-group').style.display = 'block';
       document.getElementById('logo-bg-group').style.display = 'block';
     };
     reader.readAsDataURL(file);
@@ -726,6 +750,7 @@
     document.getElementById('logo-file').value = '';
     document.getElementById('logo-preview-wrap').classList.remove('visible');
     document.getElementById('logo-size-group').style.display = 'none';
+    document.getElementById('circle-size-group').style.display = 'none';
     document.getElementById('logo-bg-group').style.display = 'none';
   });
 
@@ -733,9 +758,9 @@
      Overlay logo onto a QR canvas at given size.
      Uses a large white circle + inner shadow ring for clarity.
   ───────────────────────────────────────────────────── */
-  function overlayLogo(ctx, size, logoSizePct, img, cb) {
-    var logoW   = size * logoSizePct;           // logo bounding box
-    var circleR = logoW * 0.62;                 // white background circle radius
+  function overlayLogo(ctx, size, logoSizePct, circleSizePct, img, cb) {
+    var logoW   = size * logoSizePct;           // logo image bounding box
+    var circleR = size * circleSizePct * 0.5;   // circle radius — fully independent
     var cx = size / 2, cy = size / 2;
 
     /* Outer colored circle — generous padding so logo sits cleanly */
@@ -749,11 +774,11 @@
     ctx.shadowBlur  = 0;
     ctx.restore();
 
-    /* Clip-draw the logo inside (slightly smaller than circle) */
-    var clipR   = circleR - size * 0.012;       // small gap so white border shows
-    var drawW   = clipR * 1.55;                  // logo drawn at 77.5% of diameter
-    var drawX   = cx - drawW / 2;
-    var drawY   = cy - drawW / 2;
+    /* Clip to circle, draw logo at its own independent size */
+    var clipR = circleR - size * 0.010;   // tiny inset so circle edge stays clean
+    var drawW = logoW;                     // logo image size is fully independent
+    var drawX = cx - drawW / 2;
+    var drawY = cy - drawW / 2;
 
     ctx.save();
     ctx.beginPath();
@@ -814,7 +839,7 @@
   /* ─────────────────────────────────────────────────────
      Compose QR + logo into a single canvas
   ───────────────────────────────────────────────────── */
-  function composeQR(qrCanvas, size, logoSizePct, cb) {
+  function composeQR(qrCanvas, size, logoSizePct, circleSizePct, cb) {
     var canvas = document.createElement('canvas');
     canvas.width  = size;
     canvas.height = size;
@@ -830,10 +855,10 @@
     }
 
     if (logoImg.complete && logoImg.naturalWidth > 0) {
-      overlayLogo(ctx, size, logoSizePct, logoImg, function() { cb(canvas); });
+      overlayLogo(ctx, size, logoSizePct, circleSizePct, logoImg, function() { cb(canvas); });
     } else {
       logoImg.onload = function() {
-        overlayLogo(ctx, size, logoSizePct, logoImg, function() { cb(canvas); });
+        overlayLogo(ctx, size, logoSizePct, circleSizePct, logoImg, function() { cb(canvas); });
       };
     }
   }
@@ -927,7 +952,8 @@
     var colorDark  = document.getElementById('color-dark').value;
     var colorLight = document.getElementById('color-light').value;
     var company    = document.getElementById('company-name').value.trim();
-    var logoSizePct = parseInt(document.getElementById('logo-size').value, 10) / 100;
+    var logoSizePct   = parseInt(document.getElementById('logo-size').value, 10) / 100;
+    var circleSizePct = parseInt(document.getElementById('circle-size').value, 10) / 100;
     var qrRaw = 900; // raw QR gen size
 
     var hidden = document.getElementById('qr-temp-hidden');
@@ -946,7 +972,7 @@
       var srcCanvas = tempDiv.querySelector('canvas');
       if (!srcCanvas) { alert('QR generation failed.'); return; }
 
-      composeQR(srcCanvas, qrRaw, logoSizePct, function(composed) {
+      composeQR(srcCanvas, qrRaw, logoSizePct, circleSizePct, function(composed) {
         /* Build preview full card at small size */
         var previewW = 260;
         buildFullCanvas(composed, qrRaw, previewW, function(fullCard) {
@@ -984,7 +1010,8 @@
     var company    = document.getElementById('company-name').value.trim() || 'QR-Code';
     var colorDark  = document.getElementById('color-dark').value;
     var colorLight = document.getElementById('color-light').value;
-    var logoSizePct = parseInt(document.getElementById('logo-size').value, 10) / 100;
+    var logoSizePct   = parseInt(document.getElementById('logo-size').value, 10) / 100;
+    var circleSizePct = parseInt(document.getElementById('circle-size').value, 10) / 100;
 
     var HD = 2200; // QR generation size
 
@@ -1003,7 +1030,7 @@
       var qrC = offscreen.querySelector('canvas');
       if (!qrC) { document.body.removeChild(offscreen); return; }
 
-      composeQR(qrC, HD, logoSizePct, function(composed) {
+      composeQR(qrC, HD, logoSizePct, circleSizePct, function(composed) {
         var outputW = 2400;
         buildFullCanvas(composed, HD, outputW, function(finalCanvas) {
           document.body.removeChild(offscreen);
